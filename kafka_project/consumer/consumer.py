@@ -2,8 +2,12 @@ import json
 import random
 import time
 from io import BytesIO
-from confluent_kafka import Consumer, KafkaException
+from confluent_kafka import Consumer, Producer, KafkaException
 from fastavro import reader, parse_schema
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from dlq.dlq_producer import send_to_dlq
 
 # Load Avro schema
 def load_schema(schema_path):
@@ -50,6 +54,13 @@ def run_consumer():
     consumer.subscribe(['orders'])
     schema = load_schema('../schemas/order.avsc')
     
+    # DLQ producer configuration
+    dlq_config = {
+        'bootstrap.servers': 'localhost:9092',
+        'client.id': 'dlq-producer'
+    }
+    dlq_producer = Producer(dlq_config)
+    
     # Running average tracking
     total_price = 0.0
     count = 0
@@ -82,13 +93,16 @@ def run_consumer():
                 print(f"✓ Processing successful")
                 print(f"Running Average: ${avg:.2f} (Total: ${total_price:.2f}, Count: {count})\n")
             else:
-                # Mark as permanent failure (will be handled in Step 5)
-                print(f"✗ Permanent failure for order: {order['orderId']}\n")
+                # Send permanently failed message to DLQ
+                print(f"✗ Permanent failure for order: {order['orderId']}")
+                send_to_dlq(order, dlq_producer, schema)
+                print()
     
     except KeyboardInterrupt:
         print("\nConsumer stopped by user")
     finally:
         consumer.close()
+        dlq_producer.flush()
 
 if __name__ == '__main__':
     run_consumer()
