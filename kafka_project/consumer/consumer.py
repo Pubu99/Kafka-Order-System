@@ -1,4 +1,6 @@
 import json
+import random
+import time
 from io import BytesIO
 from confluent_kafka import Consumer, KafkaException
 from fastavro import reader, parse_schema
@@ -14,6 +16,25 @@ def deserialize_avro(avro_bytes, schema):
     avro_reader = reader(bytes_io, schema)
     for record in avro_reader:
         return record
+
+# Process order with retry logic
+def process_order(order, max_retries=3):
+    for attempt in range(1, max_retries + 1):
+        try:
+            # Simulate random temporary failure (30% chance)
+            if random.random() < 0.3:
+                raise Exception("Temporary processing failure")
+            
+            # Processing successful
+            return True
+            
+        except Exception as e:
+            print(f"  Attempt {attempt}/{max_retries} failed: {e}")
+            if attempt < max_retries:
+                time.sleep(0.5)  # Wait before retry
+            else:
+                print(f"  All retries exhausted - permanent failure")
+                return False
 
 # Main consumer function
 def run_consumer():
@@ -48,15 +69,21 @@ def run_consumer():
             
             # Deserialize message
             order = deserialize_avro(msg.value(), schema)
-            
-            # Update running average
-            total_price += order['price']
-            count += 1
-            avg = total_price / count
-            
-            # Log order and updated average
             print(f"Received order: {order}")
-            print(f"Running Average: ${avg:.2f} (Total: ${total_price:.2f}, Count: {count})\n")
+            
+            # Process with retry logic
+            success = process_order(order)
+            
+            if success:
+                # Update running average only if processing succeeded
+                total_price += order['price']
+                count += 1
+                avg = total_price / count
+                print(f"✓ Processing successful")
+                print(f"Running Average: ${avg:.2f} (Total: ${total_price:.2f}, Count: {count})\n")
+            else:
+                # Mark as permanent failure (will be handled in Step 5)
+                print(f"✗ Permanent failure for order: {order['orderId']}\n")
     
     except KeyboardInterrupt:
         print("\nConsumer stopped by user")
