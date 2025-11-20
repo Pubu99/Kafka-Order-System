@@ -7,7 +7,11 @@ from fastavro import writer, parse_schema
 
 # Load Avro schema
 def load_schema(schema_path):
-    with open(schema_path, 'r') as f:
+    # Convert to absolute path relative to this script
+    import os
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    abs_path = os.path.join(script_dir, schema_path)
+    with open(abs_path, 'r') as f:
         return parse_schema(json.load(f))
 
 # Serialize order to Avro format
